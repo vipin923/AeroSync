@@ -1,0 +1,155 @@
+﻿@page "/intent-analyzer"
+@using MudBlazor
+@using AeroSync.Services
+@inject IntentServices intentServices
+@using System.Text.Json
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    
+    <MudText Typo="Typo.h4" Class="font-weight-bold mb-2">AeroSync NLP Engine</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Surface" Class="mb-6">
+        Test the local Phi-3 API by simulating passenger messages.
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-6" Elevation="3" Style="background-color: #1e293b; border: 1px solid rgba(255,255,255,0.1);">
+                <MudTextField @bind-Value="_testMessage" 
+                              Label="Passenger Message" 
+                              Variant="Variant.Outlined" 
+                              Lines="5" 
+                              Placeholder="e.g., Stuck at Terminal 2 for 4 hours, anyone down to grab a beer?"
+                              Style="color: white;"/>
+                
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Primary" 
+                           Class="mt-4 full-width" 
+                           OnClick="AnalyzeIntentAsync"
+                           Disabled="@_isAnalyzing">
+                    @if (_isAnalyzing)
+                    {
+                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                        <MudText Class="ms-2">Analyzing...</MudText>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Class="mr-2"/>
+                        <MudText>Extract Intent</MudText>
+                    }
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4 mb-4">@_errorMessage</MudAlert>
+        }
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-6" Elevation="3" Style="background-color: #0f172a; border: 1px solid rgba(255,255,255,0.05); height: 100%;">
+                <MudText Typo="Typo.h6" Class="font-weight-bold mb-4" Style="color: white;">Extraction Results</MudText>
+
+                @if (_intentResult != null)
+                {
+                    @if (!string.IsNullOrEmpty(_intentResult.Duration))
+                    {
+                        <MudText Typo="Typo.subtitle2" Color="Color.Info" Class="mb-1 mt-3">Detected Timeframe</MudText>
+                        <MudChip T="string" Size="Size.Large" Color="Color.Warning" Variant="Variant.Filled" Class="font-weight-bold mb-4">
+                            <MudIcon  Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Class="mr-2"/> 
+                            @_intentResult.Duration
+                        </MudChip>
+                    }
+
+                    @if (_intentResult.Categories != null && _intentResult.Categories.Any())
+                    {
+                        <MudText Typo="Typo.subtitle2" Color="Color.Info" Class="mb-1">Detected Intent Categories</MudText>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var cat in _intentResult.Categories)
+                            {
+                                <MudChip T="string" Size="Size.Medium" Color="Color.Secondary" Variant="Variant.Outlined">
+                                    @cat
+                                </MudChip>
+                            }
+                        </div>
+                    }
+
+                    <MudDivider Class="my-6" Style="border-color: rgba(255,255,255,0.1);" />
+                    
+                    <MudText Typo="Typo.caption" Color="Color.Surface">Raw AI Output</MudText>
+                    <MudPaper Class="pa-3 mt-2" Style="background-color: #000; border: 1px solid #333;">
+                        <pre style="color: #10b981; margin: 0; font-family: monospace; font-size: 12px;">@_rawJson</pre>
+                    </MudPaper>
+                }
+                else if (_isAnalyzing)
+                {
+                    <div class="d-flex flex-column align-center justify-center" style="height: 200px;">
+                        <MudProgressCircular Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
+                        <MudText Typo="Typo.body2" Color="Color.Surface" Class="mt-4">Waking up Phi-3...</MudText>
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex align-center justify-center" style="height: 200px; opacity: 0.5;">
+                        <MudText Typo="Typo.body2" Color="Color.Surface">Awaiting passenger data...</MudText>
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private string _testMessage = "Stuck at Terminal 2 for 4 hours, anyone down to grab a beer or watch the cricket game?";
+    private bool _isAnalyzing = false;
+    private ParsedIntent? _intentResult;
+    private string _rawJson = "";
+    private string _errorMessage = "";
+
+    // 1. Define the models to match your Windows Web API
+    public class ApiRequest
+    {
+        public string Message { get; set; } = "";
+    }
+
+    public class ApiResponse
+    {
+        public bool Success { get; set; }
+        public string Data { get; set; } = ""; // The AI returns a JSON string inside this property
+    }
+
+    public class ParsedIntent
+    {
+        public List<string> Categories { get; set; } = new();
+        public string Duration { get; set; } = "";
+    }
+
+    // 2. The HTTP call to your local Windows API
+    private async Task AnalyzeIntentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_testMessage)) return;
+
+        _isAnalyzing = true;
+        _errorMessage = "";
+        _intentResult = null;
+        StateHasChanged();
+
+        try
+        {
+            string cleanJson = await intentServices.AnalyzeIntent(_testMessage);
+
+            if (!string.IsNullOrEmpty(cleanJson))
+            {
+                _intentResult = JsonSerializer.Deserialize<ParsedIntent>(cleanJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Analysis failed: {ex.Message}";
+        }
+        finally
+        {
+            _isAnalyzing = false;
+            StateHasChanged();
+        }
+    }
+}

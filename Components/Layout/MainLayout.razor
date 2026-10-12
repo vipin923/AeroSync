@@ -1,0 +1,106 @@
+﻿@inherits LayoutComponentBase
+@using MudBlazor
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using AeroSync.Services
+@inject NavigationManager Navigation
+
+@using AeroSync.Models
+@inject AuthServices authServices
+<MudThemeProvider IsDarkMode="true" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Style="background-color: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px);">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+
+        <MudIcon Icon="@Icons.Material.Filled.ConnectingAirports" Color="Color.Info" Class="mr-2" />
+        <MudText Typo="Typo.h5" Class="font-weight-bold" Style="color: white; letter-spacing: 1px;">AeroSync</MudText>
+
+        <MudSpacer />
+
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudTextField T="string" Placeholder="Search flights or destinations..." Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Class="mr-6"
+                          Style="background-color: rgba(255,255,255,0.05); color: white; border-radius: 20px; width: 350px;"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Info" />
+        </MudHidden>
+
+        <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Info" Class="mr-2" />
+        <MudAvatar Color="Color.Info" Variant="Variant.Filled" Size="Size.Medium" Class="font-weight-bold" Style="cursor: pointer;">@GetInitials(users.PassengerName)</MudAvatar>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Style="background-color: #0f172a; display: flex; flex-direction: column;">
+
+        <div class="pa-4 text-center mt-4">
+            <MudAvatar Color="Color.Info" Style="height: 64px; width: 64px;" Class="mb-2 font-weight-bold mx-auto text-h5">@GetInitials(users.PassengerName)</MudAvatar>
+            <MudText Typo="Typo.subtitle1" Style="color: white;" Class="font-weight-bold">@users.UserName</MudText>
+            <MudText Typo="Typo.body2" Style="color: #94a3b8;">2 Upcoming Flights</MudText>
+        </div>
+
+        <MudDivider Class="mb-2" Style="background-color: rgba(255,255,255,0.1);" />
+
+        <MudNavMenu Class="flex-grow-1">
+            <MudNavLink Href="/feed" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Forum" IconColor="Color.Info">Active Cabin Chat</MudNavLink>
+            <MudNavLink Href="/chat" Icon="@Icons.Material.Filled.Chat" IconColor="Color.Info">Chat</MudNavLink>
+            <MudNavLink Href="/layover-matcher" Icon="@Icons.Material.Filled.PeopleAlt" IconColor="Color.Info">My Connections</MudNavLink>
+            <MudNavLink Href="/itineraries" Icon="@Icons.Material.Filled.FlightTakeoff" IconColor="Color.Info">My Itineraries</MudNavLink>
+            <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings" IconColor="Color.Info">Settings</MudNavLink>
+        </MudNavMenu>
+
+        <div class="pa-4 mb-4 mt-auto">
+            <MudButton Variant="Variant.Filled" OnClick="GoToItenary" Color="Color.Info" FullWidth="true" StartIcon="@Icons.Material.Filled.Add" Class="rounded-lg font-weight-bold py-2">
+                Sync New Flight
+            </MudButton>
+        </div>
+    </MudDrawer>
+
+    <MudMainContent Class="aerosync-bg">
+        <MudContainer MaxWidth="MaxWidth.Medium" Class="pt-6 pb-16">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    // This controls whether the side menu is open or closed
+    bool _drawerOpen = true;
+    private Users users = new();
+    protected override async Task OnInitializedAsync()
+    {
+        var email = await SecureStorage.GetAsync("Email");
+        users = await authServices.GetUserInfo(email);
+    }
+    void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+    private void GoToItenary()
+    {
+        Navigation.NavigateTo("/itinerary-scanner");
+
+    }
+    private string GetInitials(string name)
+{
+    if (string.IsNullOrWhiteSpace(name))
+        return "?"; // Fallback for empty names
+
+    // Split the name by spaces and remove any extra whitespace
+    var words = name.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+    if (words.Length == 1)
+    {
+        // If it's a single word like "Admin", return the first two letters (e.g., "AD")
+        return words[0].Length >= 2 
+            ? words[0].Substring(0, 2).ToUpper() 
+            : words[0].ToUpper();
+    }
+
+    // Grab the first letter of the first word + first letter of the last word
+    string firstInitial = words[0].Substring(0, 1);
+    string lastInitial = words[^1].Substring(0, 1); // [^1] is modern C# for the last item
+
+    return (firstInitial + lastInitial).ToUpper();
+}
+}

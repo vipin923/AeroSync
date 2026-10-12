@@ -1,0 +1,188 @@
+﻿@page "/"
+@layout EmptyLayout
+@inject NavigationManager Navigation
+@using AeroSync.Services
+@inject AuthServices authServices
+@inject ISnackbar Snackbar
+@using MudBlazor
+
+<style>
+    /* Keyframe for the main card entry (Keep this!) */
+    .fade-in-up {
+        animation: fadeInUp 0.8s cubic-bezier(0.39, 0.575, 0.565, 1) both;
+    }
+
+    @@keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(40px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* New Subtle Background Circle Animations:
+        */
+    @@keyframes circlePath1 {
+        0%, 100% {
+            transform: translate(-20%, -30%) scale(1);
+        }
+
+        50% {
+            transform: translate(-10%, -20%) scale(1.1);
+        }
+    }
+
+    @@keyframes circlePath2 {
+        0%, 100% {
+            transform: translate(30%, -10%) scale(1);
+        }
+
+        50% {
+            transform: translate(20%, -20%) scale(0.9);
+        }
+    }
+
+    /* Class for the overall screen background (gradient, screen-filling, relative positioning for children) */
+    .aerosync-bg {
+        background: linear-gradient(135deg, #0f172a 0%, #172554 100%);
+        position: relative; /* Essential to contain absolute background elements */
+        overflow: hidden; /* Ensure circles don't cause scrollbars */
+    }
+
+    /* Container for the background animation elements (placed *inside* aerosync-bg, *behind* the card) */
+    .aerosync-background-animation {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0; /* Keep behind main content (card is stacked after this in DOM) */
+        pointer-events: none; /* Let clicks pass through to background/card */
+    }
+
+    /* General style for the semi-transparent background circles */
+    .background-circle {
+        position: absolute;
+        border-radius: 50%;
+        background-color: rgba(96, 165, 250, 0.25); /* Made it 3x brighter! */
+        filter: blur(40px); /* Reduced the blur so you can actually see them */
+        transform-origin: center center;
+    }
+
+    /* Specific starting points, sizes, and unique animation patterns for individual circles */
+    .circle-1 {
+        width: 40vh; /* Large size relative to screen height */
+        height: 40vh;
+        left: 10%;
+        top: 20%;
+        animation: circlePath1 25s infinite ease-in-out; /* Slow movement */
+    }
+
+    .circle-2 {
+        width: 30vh;
+        height: 30vh;
+        right: 15%;
+        bottom: 25%;
+        animation: circlePath2 20s infinite ease-in-out; /* Different slow movement */
+    }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="d-flex align-center justify-center aerosync-bg" Style="height: 100vh; width: 100vw; margin: 0; padding: 0;">
+
+    <div class="aerosync-background-animation">
+        <div class="background-circle circle-1"></div>
+        <div class="background-circle circle-2"></div>
+    </div>
+
+    <MudPaper Elevation="25" Class="pa-8 fade-in-up rounded-xl" Style="width: 100%; max-width: 450px; background-color: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); z-index: 1;">
+
+        <div class="d-flex flex-column align-center mb-6">
+            <MudIcon Icon="@Icons.Material.Filled.FlightTakeoff" Color="Color.Info" Style="font-size: 4rem;" Class="mb-2" />
+
+            <MudText Typo="Typo.h3" Style="color: white;" Class="font-weight-bold tracking-tight">AeroSync</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Info" Class="mt-1">Connect before you fly.</MudText>
+        </div>
+
+        <MudForm>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4 rounded-lg" ShowCloseIcon="true" CloseIconClicked="ClearError">
+                    @_errorMessage
+                </MudAlert>
+            }
+            <MudTextField T="string" Label="Email" Variant="Variant.Outlined" Class="mb-4"
+                          Adornment="Adornment.Start" @bind-Value="_email" AdornmentIcon="@Icons.Material.Filled.Email" AdornmentColor="Color.Info"
+                          Style="color: white;" />
+
+            <MudTextField T="string" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" Class="mb-6"
+                          Adornment="Adornment.Start" @bind-Value="_password" AdornmentIcon="@Icons.Material.Filled.Lock" AdornmentColor="Color.Info"
+                          Style="color: white;" />
+
+            <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Large" FullWidth="true" 
+                       Class="rounded-lg py-3 font-weight-bold" 
+                       Disabled="@_isProcessing" 
+                       OnClick="AuthenticateUser">
+                
+                @if (_isProcessing)
+                {
+                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" Color="Color.Surface" />
+                    <MudText Class="ms-2 font-weight-bold">Syncing Radar...</MudText>
+                }
+                else
+                {
+                    <MudText Class="font-weight-bold">Board Now</MudText>
+                }
+            </MudButton>
+        </MudForm>
+
+        <div class="d-flex justify-center mt-6">
+            <MudText Typo="Typo.body2" Style="color: #94a3b8;">
+                No boarding pass yet?
+                <MudLink Href="/register" Color="Color.Info" Underline="Underline.None" Class="font-weight-bold ml-1">Register</MudLink>
+            </MudText>
+        </div>
+
+    </MudPaper>
+</MudContainer>
+@code{
+    private bool _isProcessing = false;
+
+    private string _errorMessage = string.Empty;
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private void ClearError()
+    {
+        _errorMessage = string.Empty;
+    }
+    // This method fires when the button is clicked
+    private async Task AuthenticateUser()
+    {
+        // 1. Lock the button and show the spinner
+        _isProcessing = true;
+        var result = await authServices.Login(_email, _password);
+        if (result != null)
+        {
+            await Task.Delay(2500);
+            Snackbar.Add("Login Successfully!", Severity.Success);
+            Navigation.NavigateTo("/feed");
+            
+        }
+        else
+        {
+            Snackbar.Add("Invalid credentials. Please try again.", Severity.Error);
+            _isProcessing = false;
+            _password = string.Empty; // Clear the password field for security  
+            return;
+        }
+        // 2. Simulate a network delay (like connecting to your SQL database or verifying PASETO)
+        // Wait for 2.5 seconds to show off the cool animation
+       
+        // 3. Reset the button (In a real app, you would redirect the user to the main page here)
+        _isProcessing = false;
+    }
+
+}

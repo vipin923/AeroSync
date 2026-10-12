@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../../Web Application  Webapplication/AeroSyncAPI/AeroSyncAPI.csproj" />
+  <Project Path="AeroSync.csproj" />
+</Solution>

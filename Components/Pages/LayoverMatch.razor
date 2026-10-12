@@ -1,0 +1,90 @@
+﻿@page "/layover-matcher"
+@using AeroSync.Services
+@using AeroSync.Models
+
+@inject LayoverServices layoverServices
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudText Typo="Typo.h4" Class="text-white mb-6">Smart Layover Network</MudText>
+
+    <MudPaper Class="pa-6 mb-6 rounded-lg" Elevation="4" Style="background-color: #1e293b;">
+        <MudText Typo="Typo.subtitle1" Class="text-white mb-2">Your Current Context (@_userdate.Terminal)</MudText>
+        <MudText Typo="Typo.body2" Class="mb-4" Style="color: #94a3b8;">Interests: @_userdate.Tags</MudText>
+        
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="FindMatches" Disabled="@_isSearching">
+            @if (_isSearching)
+            {
+                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                <MudText Class="ms-2">Scanning Terminal...</MudText>
+            }
+            else
+            {
+                <MudText>FIND LAYOVER BUDDIES</MudText>
+            }
+        </MudButton>
+    </MudPaper>
+
+    @if (_matches != null && _matches.Any())
+    {
+        <MudText Typo="Typo.h6" Class="text-white mb-4">Recommended Matches near you:</MudText>
+        
+        @foreach (var match in _matches)
+        {
+            <MudCard Class="mb-4 rounded-lg" Style="background-color: #0f172a; border-left: 4px solid #10b981;">
+                <MudCardContent>
+                    <div class="d-flex align-center justify-space-between">
+                        <div class="d-flex align-center">
+                            <MudAvatar Color="Color.Secondary" Class="mr-4">@match.MatchedUserName[0]</MudAvatar>
+                            <div>
+                                <MudText Typo="Typo.h6" Class="text-white font-weight-bold">@match.MatchedUserName</MudText>
+                                <MudText Typo="Typo.body2" Style="color: #94a3b8;">@match.MatchedUserInterests</MudText>
+                            </div>
+                        </div>
+                        <MudChip T="string" Color="Color.Success" Variant="Variant.Filled">
+                            @((match.SimilarityScore * 100).ToString("0"))% Match
+                        </MudChip>
+                    </div>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Info" StartIcon="@Icons.Material.Filled.Chat">Send Message</MudButton>
+                </MudCardActions>
+            </MudCard>
+        }
+    }
+    else if (_matches != null && !_matches.Any())
+    {
+        <MudText Color="Color.Warning">No matches found in your terminal right now.</MudText>
+    }
+</MudContainer>
+
+    @code {
+    private bool _isSearching = false;
+    private List<MatchScore>? _matches;
+    private PassengerContext _userdate = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var Email = await SecureStorage.GetAsync("Email");
+         _userdate = await layoverServices.GetUserMatchData(Email);
+                 await FindMatches();
+
+            // Optionally, you could auto-trigger the search on page load
+        }
+    
+
+    private async Task FindMatches()
+    {
+        _isSearching = true;
+        StateHasChanged();
+
+        // Simulate YOUR current context
+       
+        var Email = await SecureStorage.GetAsync("Email");
+        _userdate = await layoverServices.GetUserMatchData(Email);
+        // Call the ML.NET API!
+        _matches = await layoverServices.GetLayoverMatchesAsync(_userdate);
+
+        _isSearching = false;
+        StateHasChanged();
+    }
+    }

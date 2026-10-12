@@ -1,0 +1,158 @@
+﻿@page "/chat"
+@using MudBlazor
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+<style>
+    /* 1. The main chat window that allows scrolling */
+    .chat-container {
+        height: calc(100vh - 220px); /* Leaves room for header and input box */
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        padding-bottom: 20px;
+    }
+
+    /* 2. The Pop-in Animation for new messages! */
+    .message-bubble {
+        max-width: 85%;
+        border-radius: 16px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+        /* This makes the bubble smoothly scale up and slide in */
+        animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @@keyframes popIn {
+        from { opacity: 0; transform: scale(0.9) translateY(15px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* 3. Different styling depending on who sent it */
+    .message-sent {
+        background-color: rgba(14, 165, 233, 0.15); /* Faint blue */
+        border: 1px solid rgba(14, 165, 233, 0.4);
+        align-self: flex-end; /* Pushes to the right */
+        border-bottom-right-radius: 4px; /* Sharp corner pointing to user */
+    }
+
+    .message-received {
+        background-color: rgba(30, 41, 59, 0.8); /* Dark slate */
+        border: 1px solid rgba(255,255,255,0.1);
+        align-self: flex-start; /* Pushes to the left */
+        border-bottom-left-radius: 4px;
+        backdrop-filter: blur(10px);
+    }
+
+    /* Custom thin scrollbar for a sleek look */
+    .chat-container::-webkit-scrollbar { width: 6px; }
+    .chat-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+</style>
+
+<MudPaper Class="pa-4 d-flex align-center rounded-0" Style="background-color: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.05); z-index: 10;">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Inherit" Style="color: white;" Href="/feed" />
+    <div class="ml-3">
+        <MudText Typo="Typo.subtitle1" Style="color: white;" Class="font-weight-bold">Flight AI-204 Cabin</MudText>
+        <MudText Typo="Typo.caption" Style="color: #10b981;">
+            <span style="height: 8px; width: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; margin-right: 4px; animation: pulse 2s infinite;"></span>
+            14 Travelers Online
+        </MudText>
+    </div>
+</MudPaper>
+
+<div class="chat-container pa-4" id="chat-history">
+    @foreach (var msg in _messages)
+    {
+        <div class="message-bubble @(msg.IsMine ? "message-sent" : "message-received")">
+            
+            @if (!msg.IsMine)
+            {
+                <div class="d-flex align-center mb-1">
+                    <MudText Typo="Typo.caption" Color="Color.Info" Class="font-weight-bold">@msg.Sender</MudText>
+                    <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);" Class="ml-2">@msg.Seat</MudText>
+                </div>
+            }
+            
+            <MudText Typo="Typo.body2" Style="color: white;">@msg.Text</MudText>
+            <MudText Typo="Typo.caption" Style="color: rgba(255,255,255,0.4);" Class="d-block mt-1 text-right">@msg.Time.ToString("h:mm tt")</MudText>
+        </div>
+    }
+</div>
+
+<MudPaper Class="d-flex align-center pa-2 rounded-0" Style="background-color: #0f172a; border-top: 1px solid rgba(255,255,255,0.1); position: fixed; bottom: 0; left: 0; width: 100%; z-index: 10;">
+    <MudIconButton Icon="@Icons.Material.Filled.Add" Style="color: #94a3b8;" />
+    
+    <MudTextField @bind-Value="_currentInput" Placeholder="Message the cabin..." 
+                  DisableUnderLine="true" Class="mx-2 px-4 rounded-xl" 
+                  Style="background-color: rgba(255,255,255,0.05); color: white;" 
+                  Immediate="true" OnKeyDown="HandleKeyDown" />
+                  
+    <MudIconButton Icon="@Icons.Material.Filled.Send" Color="Color.Info" 
+                   Disabled="@string.IsNullOrWhiteSpace(_currentInput)" 
+                   OnClick="SendMessage" />
+</MudPaper>
+
+@code {
+    private string _currentInput = "";
+
+    // A simple class to hold our message data
+    public class ChatMessage
+    {
+        public string Text { get; set; } = "";
+        public string Sender { get; set; } = "";
+        public string Seat { get; set; } = "";
+        public bool IsMine { get; set; }
+        public DateTime Time { get; set; } = DateTime.Now;
+    }
+
+    // Pre-load the chat with some strangers talking
+    private List<ChatMessage> _messages = new()
+    {
+        new ChatMessage { Text = "Anyone else hoping we don't get delayed?", Sender = "JetRoamer88", Seat = "14B", IsMine = false, Time = DateTime.Now.AddMinutes(-10) },
+        new ChatMessage { Text = "First time to Japan! If anyone wants to grab a drink, I'm at Gate 41.", Sender = "SkyWanderer2", Seat = "42F", IsMine = false, Time = DateTime.Now.AddMinutes(-2) }
+    };
+
+    // Trigger send when they hit the "Enter" key
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_currentInput))
+        {
+            SendMessage();
+        }
+    }
+
+    private void SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_currentInput)) return;
+
+        // 1. Add the user's new message to the list
+        _messages.Add(new ChatMessage 
+        { 
+            Text = _currentInput, 
+            IsMine = true, // Marks it so the CSS pushes it to the right side
+            Time = DateTime.Now 
+        });
+
+        // 2. Clear the input box
+        _currentInput = "";
+
+        // 3. (Optional) Simulate a stranger replying a second later!
+        SimulateReply();
+    }
+
+    private async void SimulateReply()
+    {
+        await Task.Delay(1500); // wait 1.5 seconds
+        
+        _messages.Add(new ChatMessage 
+        { 
+            Text = "I'm heading to Gate 41 now!", 
+            Sender = "NomadPilot", 
+            Seat = "12A",
+            IsMine = false, 
+            Time = DateTime.Now 
+        });
+        
+        // Tell Blazor to update the screen since this happened in a background timer
+        StateHasChanged(); 
+    }
+}

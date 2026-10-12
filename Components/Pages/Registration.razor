@@ -1,0 +1,179 @@
+﻿@page "/register"
+@layout EmptyLayout
+@using MudBlazor
+@using AeroSync.Models
+@using AeroSync.Services
+@inject NavigationManager Navigation
+@inject AuthServices authServices
+@inject ISnackbar Snackbar
+<style>
+    /* Smooth slide-in animation */
+    .fade-in-up {
+        animation: fadeInUp 0.8s cubic-bezier(0.39, 0.575, 0.565, 1) both;
+    }
+    @@keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Background styling */
+    .aerosync-bg {
+        background: linear-gradient(135deg, #0f172a 0%, #172554 100%);
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* We will use a slightly different background animation for the register page (radar pulse effect) */
+    .radar-pulse {
+        position: absolute;
+        width: 60vh;
+        height: 60vh;
+        border-radius: 50%;
+        background-color: rgba(96, 165, 250, 0.15);
+        filter: blur(50px);
+        animation: pulse 6s infinite ease-in-out;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 0;
+    }
+
+    @@keyframes pulse {
+        0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.5; }
+        50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+        100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.5; }
+    }
+
+    /* Dashed line to mimic a perforated boarding pass */
+    .ticket-divider {
+        border-bottom: 2px dashed rgba(255, 255, 255, 0.2);
+        width: 100%;
+        margin: 0;
+    }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="d-flex align-center justify-center aerosync-bg" Style="height: 100vh; width: 100vw; margin: 0; padding: 0;">
+    
+    <div class="radar-pulse"></div>
+
+    <MudPaper Elevation="25" Class="fade-in-up rounded-xl overflow-hidden" Style="width: 100%; max-width: 500px; background-color: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); z-index: 1;">
+        
+        <div class="pa-6 text-center" style="background-color: rgba(14, 165, 233, 0.1);">
+            <MudIcon Icon="@Icons.Material.Filled.AirplaneTicket" Color="Color.Info" Style="font-size: 3.5rem;" Class="mb-2" />
+            <MudText Typo="Typo.h4" Style="color: white;" Class="font-weight-bold tracking-tight">Aero Sync</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Info" Class="mt-1">Join the Find Traveller Buddy radar.</MudText>
+        </div>
+
+        <div class="ticket-divider"></div>
+
+        <div class="pa-8">
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4 rounded-lg" ShowCloseIcon="true" CloseIconClicked="ClearError">
+                    @_errorMessage
+                </MudAlert>
+            }
+            <MudForm>
+                <MudTextField T="string" @bind-Value="users.PassengerName" Label="Passenger Name" Variant="Variant.Outlined" Class="mb-4"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Person" AdornmentColor="Color.Info"
+                              Style="color: white;" />
+                              
+                <MudTextField T="string" @bind-Value="users.Email" Label="Email Address" Variant="Variant.Outlined" Class="mb-4"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" AdornmentColor="Color.Info"
+                              Style="color: white;" />
+                              
+                <MudTextField T="string" @bind-Value="users.Password" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" Class="mb-4"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Lock" AdornmentColor="Color.Info"
+                              Style="color: white;" />
+
+                <MudTextField T="string" Label="Confirm Password" Variant="Variant.Outlined" InputType="InputType.Password" Class="mb-6"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.VerifiedUser" AdornmentColor="Color.Info"
+                              Style="color: white;" />
+                <MudTextField @bind-Value="_pilotHandle" Label="User Name" Variant="Variant.Outlined" Class="mb-4"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Refresh"
+                              AdornmentColor="Color.Info"
+                              Placeholder="Generate UserName by Clicking Refresh Icon..."
+                              OnAdornmentClick="GenerateRandomHandle"
+                              AdornmentAriaLabel="Generate UserName"
+                              Style="color: white;" />
+                <MudCheckBox T="bool" Color="Color.Info" Class="mb-6">
+                    <MudText Typo="Typo.body2" Style="color: #94a3b8;">
+                        I agree to the <MudLink Href="#" Color="Color.Info" Underline="Underline.Always">Flight Rules</MudLink>
+                    </MudText>
+                </MudCheckBox>
+
+                <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Large" FullWidth="true" Class="rounded-lg py-3 font-weight-bold"  Disabled="@_isProcessing" 
+                       OnClick="Register">
+                
+                @if (_isProcessing)
+                {
+                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" Color="Color.Surface" />
+                    <MudText Class="ms-2 font-weight-bold">Syncing Radar...</MudText>
+                }
+                else
+                {
+                    <MudText Class="font-weight-bold">Board Now</MudText>
+                }
+                </MudButton>
+            </MudForm>
+
+            <div class="d-flex justify-center mt-6">
+                <MudText Typo="Typo.body2" Style="color: #94a3b8;">
+                    Already checked in? 
+                    <MudLink Href="/login" Color="Color.Info" Underline="Underline.None" Class="font-weight-bold ml-1">Board Here</MudLink>
+                </MudText>
+            </div>
+        </div>
+        
+    </MudPaper>
+</MudContainer>
+@code{
+    private bool _isProcessing = false;
+    private string _pilotHandle = ""; // This is bound to the text field
+    private string _errorMessage = string.Empty;
+    private Users users = new();
+    // 2. A method to hide the box when the user clicks the 'X'
+    private void ClearError()
+    {
+        _errorMessage = string.Empty;
+    }
+    // This method fires when they click the shuffle icon
+    private void GenerateRandomHandle()
+    {
+        // Words related to travel, movement, and destinations
+        var adjectives = new[] { "Wander", "Globe", "Transit", "Horizon", "Voyage", "Trek", "Compass", "Miles", "Sky", "Nomad" };
+
+        // Words for people who travel
+        var nouns = new[] { "Traveler", "Explorer", "Passenger", "Globetrotter", "Voyager", "Roamer", "Wayfarer", "Flyer", "Seeker", "Tourist" };
+
+        var random = new Random();
+
+        string adj = adjectives[random.Next(adjectives.Length)];
+        string noun = nouns[random.Next(nouns.Length)];
+        int number = random.Next(10, 999);
+
+        // Sets the text box to something like "WanderExplorer402" or "TransitPassenger88"
+        _pilotHandle = $"{adj}{noun}{number}";
+    }
+    // This method fires when the button is clicked
+    private async Task Register()
+    {
+        // 1. Lock the button and show the spinner
+        _isProcessing = true;
+        users.UserName = _pilotHandle;
+        var result = await authServices.SaveUser(users);
+        if (result < 0)
+        {
+            await Task.Delay(2500);
+            Snackbar.Add("Register Successfully Now Login UserName", Severity.Success);
+            Navigation.NavigateTo("/");
+        }
+        else
+        {
+            _errorMessage = "Email are Already Register with us...!";
+        }
+        // 3. Reset the button (In a real app, you would redirect the user to the main page here)
+        _isProcessing = false;
+    }
+}

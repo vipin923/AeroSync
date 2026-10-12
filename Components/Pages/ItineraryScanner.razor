@@ -1,0 +1,183 @@
+﻿@page "/itinerary-scanner"
+@using MudBlazor
+@using System.Text.Json
+@using AeroSync.Models
+@using AeroSync.Services
+@inject IntentServices intentService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudText Typo="Typo.h4" Class="font-weight-bold mb-2">Smart Import</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Surface" Class="mb-6">
+        Paste your confirmation email or upload a screenshot of your boarding pass.
+    </MudText>
+
+    <MudPaper Class="pa-6 mb-6" Elevation="3" Style="background-color: #1e293b;">
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+            
+            <MudTabPanel Text="Paste Email" Icon="@Icons.Material.Filled.ContentPaste">
+                <MudTextField @bind-Value="_rawInput" 
+                              Variant="Variant.Outlined" 
+                              Lines="6" 
+                              Placeholder="Paste your flight confirmation email here..." />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4 full-width" OnClick="ProcessTextAsync" Disabled="_isProcessing">
+                    Extract Details
+                </MudButton>
+            </MudTabPanel>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-4 mb-4">@_errorMessage</MudAlert>
+            }
+            <MudTabPanel Text="Upload Screenshot" Icon="@Icons.Material.Filled.Image">
+                <div class="d-flex flex-column align-center justify-center pa-8" style="border: 2px dashed #475569; border-radius: 8px;">
+                    <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Surface" Class="mb-2"/>
+                    <MudFileUpload T="IBrowserFile" FilesChanged="HandleImageUpload" Accept=".png, .jpg, .jpeg, .webp">
+                        <ActivatorContent>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary">
+            Select Boarding Pass
+        </MudButton>
+    </ActivatorContent>
+</MudFileUpload>
+                </div>
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+
+    @if (_isProcessing)
+    {
+        <div class="d-flex align-center justify-center pa-8">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mr-4"/>
+            <MudText>AI is extracting flight details...</MudText>
+        </div>
+    }
+
+    @if (_flightData != null && !_isProcessing)
+    {
+        <MudCard Elevation="4" Style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-left: 6px solid #10b981;">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Primary" Variant="Variant.Filled">
+                        <MudIcon Icon="@Icons.Material.Filled.FlightTakeoff" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.subtitle2" Style="color: #94a3b8;">Flight Number</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold text-white">@_flightData.FlightNumber</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="d-flex justify-space-between mt-n2">
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #94a3b8;">Terminal</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #10b981;">@_flightData.DepartureTerminal</MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #94a3b8;">Gate</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #10b981;">@_flightData.Gate</MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #94a3b8;">Departure</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold text-white">@_flightData.DepartureTime</MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Style="color: #94a3b8;">Date</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold text-white">@_flightData.Date</MudText>
+                </div>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton FullWidth="true" OnClick="SaveItinerary" Variant="Variant.Filled" Color="Color.Success" Class="mt-2">
+                    Save Itinerary
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    }
+</MudContainer>
+
+    @code {
+    private string _rawInput = "";
+    private bool _isProcessing = false;
+    private FlightItinerary? _flightData;
+    private string _errorMessage = "";
+
+
+
+    private async Task ProcessTextAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_rawInput))
+        {
+            _errorMessage = "Please paste an email first!";
+            return;
+        }
+
+        _isProcessing = true;
+        _errorMessage = "";
+        _flightData = null;
+        StateHasChanged();
+
+        try
+        {
+            // Send the pasted text to the MAUI service
+            _flightData = await intentService.UploadItineraryTextAsync(_rawInput);
+
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+    private async Task SaveItinerary()
+    {
+        if (_flightData != null)
+        {
+            try
+
+            {
+                var Email = await SecureStorage.GetAsync("Email");
+
+                _flightData.EmailHash = Email;
+                var count = await intentService.SaveItinerary(_flightData);
+                Snackbar.Add("Save Itinerary Successfully!", Severity.Success);
+
+                Navigation.NavigateTo("/feed");
+
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = ex.Message;
+            }
+        }
+    }
+
+    private async Task HandleImageUpload(IBrowserFile file)
+    {
+        _isProcessing = true;
+        _flightData = null;
+        StateHasChanged();
+
+        try
+        {
+            // 1. Prepare the image file for HTTP transmission
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(file.OpenReadStream(maxAllowedSize: 10485760)); // 10MB limit
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+
+            content.Add(fileContent, "file", file.Name);
+            _flightData = await intentService.ExtractFlightDataFromImage(file);
+
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+}

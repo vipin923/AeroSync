@@ -1,0 +1,277 @@
+﻿@page "/feed"
+@using MudBlazor
+@using AeroSync.Services
+@inject FeedServices feedServices
+@inject AuthServices authServices
+@using AeroSync.Models
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Authorization
+@inject IntentServices intentServices
+@using System.Text.Json
+@attribute [Authorize]
+<MudContainer MaxWidth="MaxWidth.Small" Class="px-0" Style="height: 100vh; display: flex; flex-direction: column; background-color: #0f172a;">
+
+    <MudPaper Class="pa-4 rounded-0" Elevation="4" Style="background-color: rgba(15, 23, 42, 0.95); position: sticky; top: 0; z-index: 10; border-bottom: 1px solid rgba(255,255,255,0.05);">
+        <MudText Typo="Typo.h5" Class="font-weight-bold" Style="color: white;">Terminal Feed</MudText>
+        <MudText Typo="Typo.caption" Style="color: #10b981;">
+            <MudIcon Icon="@Icons.Material.Filled.WifiTethering" Size="Size.Small" Class="mr-1" Style="vertical-align: text-bottom;" />
+            24 Travelers Nearby
+        </MudText>
+    </MudPaper>
+
+    <div style="overflow-y: auto; flex-grow: 1; padding-bottom: 80px;">
+
+        <MudPaper Class="ma-4 pa-4" Elevation="0" Style="background-color: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;">
+            <MudTextField @bind-Value="_newPostText"
+                          Placeholder="What's your terminal status?"
+                          Variant="Variant.Outlined"
+                          Lines="2"
+                          Style="color: white; background-color: rgba(0,0,0,0.2);"
+                          DisableUnderLine="true" />
+
+            <div class="d-flex justify-end mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SubmitPost" Disabled="@(_isAnalyzing || string.IsNullOrWhiteSpace(_newPostText))">
+                    @if (_isAnalyzing)
+                    {
+                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                        <MudText Class="ms-2">Analyzing...</MudText>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Class="mr-2" />
+                        <MudText>BoardCast</MudText>
+                    }
+                </MudButton>
+            </div>
+        </MudPaper>
+
+        @foreach (var post in _post.OrderByDescending(p => p.TimeStamp))
+        {
+            <MudCard Class="ma-4" Elevation="0" Style="background-color: #1e293b; border: 1px solid rgba(255,255,255,0.05); border-radius: 12px;">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        @if (_FeedEmailHash == userModel.EmailHash)
+                        {
+                            <MudAvatar Color="Color.Info">You</MudAvatar>
+                        }
+                        else
+                        {
+                        <MudAvatar Color="Color.Secondary">@post.UserName</MudAvatar>
+                        }
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.body1" Class="font-weight-bold" Style="color: white;">@post.UserName</MudText>
+                        <MudText Typo="Typo.caption" Style="color: #94a3b8;">@post.Location • @GetTimeAgo(post.TimeStamp)</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+
+                <MudCardContent Class="pt-0">
+                    <MudText Typo="Typo.body2" Style="color: #e2e8f0; margin-bottom: 12px;">@post.Content</MudText>
+
+                    @if (post.Tags.Any())
+                    {
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            @foreach (var tag in post.Tags)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@tag</MudChip>
+                            }
+                        </div>
+                    }
+                </MudCardContent>
+
+                <MudCardActions Class="d-flex justify-space-between pl-4 pr-4 pb-4">
+                    <MudButton StartIcon="@Icons.Material.Filled.ChatBubbleOutline"
+                               Color="Color.Surface"
+                               Size="Size.Small"
+                               OnClick="@(() => ToggleComments(post))">
+                        @(post.Comments.Count) Comments
+                    </MudButton>
+
+                    @if (post.UserName != "You")
+                    {
+                        <MudButton StartIcon="@Icons.Material.Filled.Send"
+                                   Color="Color.Primary"
+                                   Variant="Variant.Text"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenDirectMessage(post.UserName))">
+                            Direct Message
+                        </MudButton>
+                    }
+                </MudCardActions>
+
+                @if (post.ShowComments)
+                {
+                    <MudDivider Style="border-color: rgba(255,255,255,0.1);" />
+                    <div class="pa-4" style="background-color: rgba(0,0,0,0.1);">
+                        @foreach (var comment in post.Comments)
+                        {
+                            <div class="mb-3">
+                                <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #94a3b8;">@comment.UserName</MudText>
+                                <MudText Typo="Typo.body2" Style="color: #cbd5e1;">@comment.Text</MudText>
+                            </div>
+                        }
+
+                        <div class="d-flex align-center mt-3">
+                            <MudTextField @bind-Value="post.DraftComment"
+                                          Placeholder="Add a comment..."
+                                          Variant="Variant.Text"
+                                          Margin="Margin.Dense"
+                                          Style="color: white;" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Send"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           OnClick="@(() => SubmitComment(post))" />
+                        </div>
+                    </div>
+                }
+            </MudCard>
+        }
+    </div>
+</MudContainer>
+
+@code {
+    private string _newPostText = "";
+
+    // Data Models
+    private HubConnection? _hubConnection;
+    private FeedModels  feedModels = new();
+    private CommentModel commentModel = new();
+    private Users userModel = new();
+    private ParsedIntent? _intentResult;
+    private List<FeedModels> _post = new();
+    private FlightItinerary? _flightData;
+    private bool _isAnalyzing = false;
+    private string _FeedEmailHash = string.Empty;
+    // Mock Database for the UI
+    protected override async Task OnInitializedAsync()
+    {
+        var Email = await SecureStorage.GetAsync("Email");
+        _flightData = await intentServices.GetItinerary(Email,DateTime.Today.ToString("MMM dd, yyyy"));
+        if(_flightData == null)
+        {
+            Navigation.NavigateTo("/itinerary-scanner");
+        }
+
+
+
+        string hubUrl = "https://localhost:7138/terminalhub";
+
+        var token = await SecureStorage.GetAsync("paseto_token");
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(hubUrl, options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult(token);
+            })
+            .WithAutomaticReconnect() // Auto-reconnects if they go through a tunnel!
+            .Build();
+
+        // 3. Listen for New Posts
+        _hubConnection.On<FeedModels>("ReceiveNewPost", (newPost) =>
+        {
+            // Add to the top of the feed
+            _post.Insert(0, newPost);
+
+            // Tell Blazor to instantly redraw the screen
+            InvokeAsync(StateHasChanged);
+        });
+
+        // 4. Listen for New Comments
+        _hubConnection.On<Guid,CommentModel>("ReceiveNewComment", (postId, newComment) =>
+        {
+            var postToUpdate = _post.FirstOrDefault(p => p.FeedId == postId);
+            if (postToUpdate != null)
+            {
+                postToUpdate.Comments.Add(newComment);
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        // Start the radio receiver!
+        await _hubConnection.StartAsync();
+        userModel = await authServices.GetUserInfo(Email);
+        _post = await feedServices.GetPosts();
+        //   _post = await feedServices.GetPosts();
+        foreach (var post in _post)
+        {
+            _FeedEmailHash = post.EmailHash;
+        }
+
+       
+        
+    }
+
+    // Actions
+    private async Task SubmitPost()
+    {
+        if (string.IsNullOrWhiteSpace(_newPostText)) return;
+        _isAnalyzing = true;
+        StateHasChanged();
+        var Email = await SecureStorage.GetAsync("Email");
+        var newPost = new FeedModels
+        {
+            EmailHash = Email,
+            Location = "Terminal "+_flightData.DepartureTerminal, // In reality, grab from GPS/Bluetooth
+            Content = _newPostText,
+
+            // You can call your Phi-3 FeedServices.AnalyzeIntent here to auto-populate tags!
+
+        };
+        string cleanJson = await intentServices.AnalyzeIntent(_newPostText);
+
+        if (!string.IsNullOrEmpty(cleanJson))
+        {
+            _intentResult = JsonSerializer.Deserialize<ParsedIntent>(cleanJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            newPost.Tags = _intentResult.Categories;
+            await feedServices.SavePost(newPost);
+            _newPostText = "";
+            _isAnalyzing = false;
+        }
+
+        
+    }
+
+    private void ToggleComments(FeedModels post)
+    {
+        feedModels.ShowComments = !feedModels.ShowComments;
+    }
+
+    private async Task SubmitComment(FeedModels post)
+    {
+        if (string.IsNullOrWhiteSpace(post.DraftComment)) return;
+
+        commentModel.EmailHash = post.EmailHash;
+        commentModel.Text = post.DraftComment;
+        commentModel.FeedId = post.FeedId;
+        await feedServices.SaveComments(commentModel);
+        
+        post.DraftComment = "";
+    }
+
+    private void OpenDirectMessage(string authorName)
+    {
+        // In your real app, this would use NavigationManager to route to:
+        // NavigationManager.NavigateTo($"/chat/{authorName}");
+        Console.WriteLine($"Navigating to DM with: {authorName}");
+    }
+
+    // Utility for Instagram-style timestamps
+    private string GetTimeAgo(DateTime timestamp)
+    {
+        var span = DateTime.Now - timestamp;
+        if (span.TotalMinutes < 1) return "Just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}
